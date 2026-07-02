@@ -217,3 +217,51 @@ func TestConcurrentClaimWriteIsRaceFreeAndSingleWinner(t *testing.T) {
 func replayVersions(fs []model.Finding) (map[string]int, error) {
 	return replay.Replay(fs)
 }
+
+// I4: an agent claims then "dies" (never releases); after TTL expires another
+// agent reclaims and successfully commits. All clock-driven, no sleeps.
+func TestLeaseExpiryRecovery(t *testing.T) {
+	clk := clock.NewMock(time.Unix(1_700_000_000, 0))
+	s := NewMemStore(clk)
+
+	// agent-a claims and dies (no release, no write).
+	if _, err := s.Claim("d1", "agent-a", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	// Before expiry, agent-b cannot claim or write.
+	if _, err := s.Claim("d1", "agent-b", time.Minute); !errors.Is(err, ErrLeaseHeld) {
+		t.Fatalf("premature claim err = %v, want ErrLeaseHeld", err)
+	}
+	if _, err := s.Write("d1", "agent-b", "x", 0); !errors.Is(err, ErrNoLease) {
+		t.Fatalf("premature write err = %v, want ErrNoLease", err)
+	}
+
+	// TTL passes; agent-b reclaims and commits.
+	clk.Advance(90 * time.Second)
+	if _, err := s.Claim("d1", "agent-b", time.Minute); err != nil {
+		t.Fatalf("reclaim after expiry: %v", err)
+	}
+	if _, err := s.Write("d1", "agent-b", "recovered", 0); err != nil {
+		t.Fatalf("write after reclaim: %v", err)
+	}
+}
+
+// Renewal keeps a lease alive across work longer than one TTL.
+func TestRenewalSurvivesLongWork(t *testing.T) {
+	clk := clock.NewMock(time.Unix(1_700_000_000, 0))
+	s := NewMemStore(clk)
+	if _, err := s.Claim("d1", "agent-a", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate 3 work chunks of 40s each, renewing between them.
+	for i := 0; i < 3; i++ {
+		clk.Advance(40 * time.Second)
+		if _, err := s.Renew("d1", "agent-a", time.Minute); err != nil {
+			t.Fatalf("renew %d: %v", i, err)
+		}
+	}
+	// After 120s of work with renewals, agent-a still holds it; agent-b cannot claim.
+	if _, err := s.Claim("d1", "agent-b", time.Minute); !errors.Is(err, ErrLeaseHeld) {
+		t.Fatalf("lease should still be held: %v", err)
+	}
+}
