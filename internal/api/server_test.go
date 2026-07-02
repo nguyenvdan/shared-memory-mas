@@ -51,11 +51,17 @@ func TestWriteConflictReturns409(t *testing.T) {
 	defer ts.Close()
 
 	first, _ := json.Marshal(map[string]any{"doc_id": "d1", "agent_id": "a", "payload": "x", "base_version": 0})
-	w1, _ := http.Post(ts.URL+"/write", "application/json", bytes.NewReader(first))
+	w1, err := http.Post(ts.URL+"/write", "application/json", bytes.NewReader(first))
+	if err != nil {
+		t.Fatal(err)
+	}
 	w1.Body.Close()
 
 	stale, _ := json.Marshal(map[string]any{"doc_id": "d1", "agent_id": "b", "payload": "y", "base_version": 0})
-	resp, _ := http.Post(ts.URL+"/write", "application/json", bytes.NewReader(stale))
+	resp, err := http.Post(ts.URL+"/write", "application/json", bytes.NewReader(stale))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("conflict status = %d, want 409", resp.StatusCode)
