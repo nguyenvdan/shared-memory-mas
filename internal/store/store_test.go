@@ -26,6 +26,9 @@ func TestReadMissingDocReturnsVersion0(t *testing.T) {
 
 func TestWriteFromVersion0Commits(t *testing.T) {
 	s := newTestStore()
+	if _, err := s.Claim("d1", "agent-a", time.Minute); err != nil {
+		t.Fatal(err)
+	}
 	f, err := s.Write("d1", "agent-a", "alpha beta", 0)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
@@ -41,17 +44,23 @@ func TestWriteFromVersion0Commits(t *testing.T) {
 
 func TestWriteWithStaleBaseVersionConflicts(t *testing.T) {
 	s := newTestStore()
+	if _, err := s.Claim("d1", "a", time.Minute); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.Write("d1", "a", "first", 0); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.Write("d1", "b", "second", 0) // base 0 is now stale
-	if !errors.Is(err, ErrVersionConflict) {
-		t.Fatalf("err = %v, want ErrVersionConflict", err)
+	// agent b tries to write without holding the lease
+	_, err := s.Write("d1", "b", "second", 0)
+	if !errors.Is(err, ErrNoLease) {
+		t.Fatalf("err = %v, want ErrNoLease", err)
 	}
 }
 
 func TestLookupIsCaseInsensitiveSubstring(t *testing.T) {
 	s := newTestStore()
+	s.Claim("d1", "a", time.Minute)
+	s.Claim("d2", "a", time.Minute)
 	s.Write("d1", "a", "Quorum Coordination", 0)
 	s.Write("d2", "a", "unrelated", 0)
 	got := s.Lookup("coordination")

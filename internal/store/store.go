@@ -14,6 +14,7 @@ var (
 	ErrVersionConflict = errors.New("version conflict")
 	ErrLeaseHeld       = errors.New("lease held by another agent")
 	ErrNotHolder       = errors.New("caller does not hold the lease")
+	ErrNoLease         = errors.New("writer holds no live lease on the doc")
 )
 
 // MemStore is the in-memory store: a derived version map plus the append-only
@@ -48,6 +49,11 @@ func (s *MemStore) Read(docID string) model.Entry {
 func (s *MemStore) Write(docID, agentID, payload string, baseVersion int) (model.Finding, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if lc := s.claims[docID]; !leaseLive(lc, s.clk.Now()) || lc.AgentID != agentID {
+		return model.Finding{}, ErrNoLease
+	}
+
 	cur := s.entries[docID] // zero Entry => Version 0 when absent
 	if cur.Version != baseVersion {
 		return model.Finding{}, ErrVersionConflict
