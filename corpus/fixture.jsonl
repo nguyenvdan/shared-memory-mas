@@ -1,0 +1,3 @@
+{"id":"doc-1","title":"Coordination","abstract":"Agents coordinate over shared memory to avoid duplicated work.","categories":["cs.DC"]}
+{"id":"doc-2","title":"Leases","abstract":"Lease based claiming with a time to live handles dead agents cleanly.","categories":["cs.OS"]}
+{"id":"doc-3","title":"Consistency","abstract":"Optimistic concurrency with version checks prevents lost updates under load.","categories":["cs.DC"]}

@@ -11,5 +11,8 @@ docs/design/
 *.prof
 *.pprof
 
+# SDD scratch (ledger, task briefs, review packages)
+.superpowers/
+
 # OS
 .DS_Store
