@@ -122,3 +122,46 @@ func TestWriteBadJSONReturns400(t *testing.T) {
 		t.Fatalf("bad-json status = %d, want 400", resp.StatusCode)
 	}
 }
+
+func TestClaimEndpointGrantsAndConflicts(t *testing.T) {
+	ts := newTestServer()
+	defer ts.Close()
+
+	claim := func(agent string) int {
+		body, _ := json.Marshal(map[string]any{"doc_id": "d1", "agent_id": agent, "ttl_ms": 60000})
+		resp, err := http.Post(ts.URL+"/claim", "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := claim("agent-a"); got != http.StatusOK {
+		t.Fatalf("first claim = %d", got)
+	}
+	if got := claim("agent-b"); got != http.StatusConflict {
+		t.Fatalf("second claim = %d, want 409", got)
+	}
+}
+
+func TestReleaseEndpointReturns204(t *testing.T) {
+	ts := newTestServer()
+	defer ts.Close()
+
+	cb, _ := json.Marshal(map[string]any{"doc_id": "d1", "agent_id": "a", "ttl_ms": 60000})
+	rc, err := http.Post(ts.URL+"/claim", "application/json", bytes.NewReader(cb))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc.Body.Close()
+
+	rb, _ := json.Marshal(map[string]any{"doc_id": "d1", "agent_id": "a"})
+	rr, err := http.Post(ts.URL+"/release", "application/json", bytes.NewReader(rb))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rr.Body.Close()
+	if rr.StatusCode != http.StatusNoContent {
+		t.Fatalf("release = %d, want 204", rr.StatusCode)
+	}
+}
