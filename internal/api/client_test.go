@@ -22,7 +22,7 @@ func TestClientRoundTrip(t *testing.T) {
 	}
 
 	// Claim a lease first
-	_, err = c.Claim("d1", "agent-a", 60000)
+	_, err = c.Claim("d1", "agent-a", time.Minute)
 	if err != nil {
 		t.Fatalf("claim = %v", err)
 	}
@@ -44,12 +44,39 @@ func TestClientWriteConflictReturnsErrConflict(t *testing.T) {
 	c := NewClient(ts.URL)
 
 	// Claim lease for agent a
-	c.Claim("d1", "a", 60000)
+	c.Claim("d1", "a", time.Minute)
 	c.Write("d1", "a", "x", 0)
 
 	// Agent b tries to write without a lease - should get ErrConflict (maps ErrNoLease)
 	_, err := c.Write("d1", "b", "y", 0)
 	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("err = %v, want ErrConflict", err)
+	}
+}
+
+func TestClientClaimAndRelease(t *testing.T) {
+	s := store.NewMemStore(clock.NewMock(time.Unix(1_700_000_000, 0)))
+	ts := httptest.NewServer(NewServer(s))
+	defer ts.Close()
+	c := NewClient(ts.URL)
+	if _, err := c.Claim("d1", "agent-a", time.Minute); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, err := c.Claim("d1", "agent-b", time.Minute); !errors.Is(err, ErrLeaseHeld) {
+		t.Fatalf("claim b err = %v, want ErrLeaseHeld", err)
+	}
+	if err := c.Release("d1", "agent-a"); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+}
+
+func TestClientRenewByNonHolder(t *testing.T) {
+	s := store.NewMemStore(clock.NewMock(time.Unix(1_700_000_000, 0)))
+	ts := httptest.NewServer(NewServer(s))
+	defer ts.Close()
+	c := NewClient(ts.URL)
+	c.Claim("d1", "agent-a", time.Minute)
+	if _, err := c.Renew("d1", "agent-b", time.Minute); !errors.Is(err, ErrNotHolder) {
+		t.Fatalf("renew err = %v, want ErrNotHolder", err)
 	}
 }
