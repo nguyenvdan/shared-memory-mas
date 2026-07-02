@@ -20,6 +20,13 @@ func TestClientRoundTrip(t *testing.T) {
 	if err != nil || e.Exists {
 		t.Fatalf("initial read = %+v, %v", e, err)
 	}
+
+	// Claim a lease first
+	_, err = c.Claim("d1", "agent-a", 60000)
+	if err != nil {
+		t.Fatalf("claim = %v", err)
+	}
+
 	f, err := c.Write("d1", "agent-a", "hello", e.Version)
 	if err != nil || f.CommittedVersion != 1 {
 		t.Fatalf("write = %+v, %v", f, err)
@@ -36,7 +43,11 @@ func TestClientWriteConflictReturnsErrConflict(t *testing.T) {
 	defer ts.Close()
 	c := NewClient(ts.URL)
 
+	// Claim lease for agent a
+	c.Claim("d1", "a", 60000)
 	c.Write("d1", "a", "x", 0)
+
+	// Agent b tries to write without a lease - should get ErrConflict (maps ErrNoLease)
 	_, err := c.Write("d1", "b", "y", 0)
 	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("err = %v, want ErrConflict", err)

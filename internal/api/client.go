@@ -75,3 +75,64 @@ func (c *Client) Findings(query string) ([]model.Finding, error) {
 	err = json.NewDecoder(resp.Body).Decode(&out)
 	return out, err
 }
+
+func (c *Client) Claim(docID, agentID string, ttlMs int) (model.Claim, error) {
+	var cl model.Claim
+	body, _ := json.Marshal(leaseRequest{
+		DocID: docID, AgentID: agentID, TTLMs: ttlMs,
+	})
+	resp, err := c.http.Post(c.base+"/claim", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return cl, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		err = json.NewDecoder(resp.Body).Decode(&cl)
+		return cl, err
+	case http.StatusConflict:
+		return cl, ErrConflict
+	default:
+		return cl, fmt.Errorf("claim: status %d", resp.StatusCode)
+	}
+}
+
+func (c *Client) Renew(docID, agentID string, ttlMs int) (model.Claim, error) {
+	var cl model.Claim
+	body, _ := json.Marshal(leaseRequest{
+		DocID: docID, AgentID: agentID, TTLMs: ttlMs,
+	})
+	resp, err := c.http.Post(c.base+"/renew", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return cl, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		err = json.NewDecoder(resp.Body).Decode(&cl)
+		return cl, err
+	case http.StatusConflict:
+		return cl, ErrConflict
+	default:
+		return cl, fmt.Errorf("renew: status %d", resp.StatusCode)
+	}
+}
+
+func (c *Client) Release(docID, agentID string) error {
+	body, _ := json.Marshal(leaseRequest{
+		DocID: docID, AgentID: agentID,
+	})
+	resp, err := c.http.Post(c.base+"/release", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		return nil
+	case http.StatusConflict:
+		return ErrConflict
+	default:
+		return fmt.Errorf("release: status %d", resp.StatusCode)
+	}
+}

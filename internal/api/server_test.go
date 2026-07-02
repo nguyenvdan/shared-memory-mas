@@ -22,6 +22,14 @@ func TestWriteThenReadOverHTTP(t *testing.T) {
 	ts := newTestServer()
 	defer ts.Close()
 
+	// Claim a lease first
+	cb, _ := json.Marshal(map[string]any{"doc_id": "d1", "agent_id": "a", "ttl_ms": 60000})
+	cr, err := http.Post(ts.URL+"/claim", "application/json", bytes.NewReader(cb))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cr.Body.Close()
+
 	body, _ := json.Marshal(map[string]any{
 		"doc_id": "d1", "agent_id": "a", "payload": "alpha", "base_version": 0,
 	})
@@ -50,6 +58,14 @@ func TestWriteConflictReturns409(t *testing.T) {
 	ts := newTestServer()
 	defer ts.Close()
 
+	// Claim lease for agent a
+	cb, _ := json.Marshal(map[string]any{"doc_id": "d1", "agent_id": "a", "ttl_ms": 60000})
+	cr, err := http.Post(ts.URL+"/claim", "application/json", bytes.NewReader(cb))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cr.Body.Close()
+
 	first, _ := json.Marshal(map[string]any{"doc_id": "d1", "agent_id": "a", "payload": "x", "base_version": 0})
 	w1, err := http.Post(ts.URL+"/write", "application/json", bytes.NewReader(first))
 	if err != nil {
@@ -57,6 +73,7 @@ func TestWriteConflictReturns409(t *testing.T) {
 	}
 	w1.Body.Close()
 
+	// Agent b tries to write without a lease - should get ErrNoLease → 409
 	stale, _ := json.Marshal(map[string]any{"doc_id": "d1", "agent_id": "b", "payload": "y", "base_version": 0})
 	resp, err := http.Post(ts.URL+"/write", "application/json", bytes.NewReader(stale))
 	if err != nil {
@@ -76,6 +93,14 @@ func TestFindingsListsAllAndFiltersByQuery(t *testing.T) {
 		{"d1", "quorum coordination"},
 		{"d2", "unrelated topic"},
 	} {
+		// Claim lease for each doc
+		cb, _ := json.Marshal(map[string]any{"doc_id": d.id, "agent_id": "a", "ttl_ms": 60000})
+		cr, err := http.Post(ts.URL+"/claim", "application/json", bytes.NewReader(cb))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cr.Body.Close()
+
 		body, _ := json.Marshal(map[string]any{
 			"doc_id": d.id, "agent_id": "a", "payload": d.payload, "base_version": 0,
 		})
