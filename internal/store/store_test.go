@@ -55,3 +55,75 @@ func TestLookupIsCaseInsensitiveSubstring(t *testing.T) {
 		t.Fatalf("lookup = %+v", got)
 	}
 }
+
+func TestClaimGrantsLeaseWhenFree(t *testing.T) {
+	s := newTestStore() // uses mock clock at a fixed time
+	c, err := s.Claim("d1", "agent-a", time.Minute)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if c.AgentID != "agent-a" || c.DocID != "d1" {
+		t.Fatalf("claim = %+v", c)
+	}
+}
+
+func TestClaimHeldByOtherReturnsErrLeaseHeld(t *testing.T) {
+	s := newTestStore()
+	if _, err := s.Claim("d1", "agent-a", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.Claim("d1", "agent-b", time.Minute)
+	if !errors.Is(err, ErrLeaseHeld) {
+		t.Fatalf("err = %v, want ErrLeaseHeld", err)
+	}
+}
+
+func TestClaimExpiredLeaseIsReclaimable(t *testing.T) {
+	clk := clock.NewMock(time.Unix(1_700_000_000, 0))
+	s := NewMemStore(clk)
+	if _, err := s.Claim("d1", "agent-a", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	clk.Advance(2 * time.Minute) // lease a's TTL expires
+	c, err := s.Claim("d1", "agent-b", time.Minute)
+	if err != nil {
+		t.Fatalf("expected reclaim, got %v", err)
+	}
+	if c.AgentID != "agent-b" {
+		t.Fatalf("reclaim holder = %s, want agent-b", c.AgentID)
+	}
+}
+
+func TestRenewByHolderExtendsExpiry(t *testing.T) {
+	clk := clock.NewMock(time.Unix(1_700_000_000, 0))
+	s := NewMemStore(clk)
+	c0, _ := s.Claim("d1", "agent-a", time.Minute)
+	clk.Advance(30 * time.Second)
+	c1, err := s.Renew("d1", "agent-a", time.Minute)
+	if err != nil {
+		t.Fatalf("renew: %v", err)
+	}
+	if !c1.LeaseExpiry.After(c0.LeaseExpiry) {
+		t.Fatalf("renew did not extend: %v !> %v", c1.LeaseExpiry, c0.LeaseExpiry)
+	}
+}
+
+func TestRenewByNonHolderFails(t *testing.T) {
+	s := newTestStore()
+	s.Claim("d1", "agent-a", time.Minute)
+	if _, err := s.Renew("d1", "agent-b", time.Minute); !errors.Is(err, ErrNotHolder) {
+		t.Fatalf("err = %v, want ErrNotHolder", err)
+	}
+}
+
+func TestReleaseByHolderFreesLease(t *testing.T) {
+	s := newTestStore()
+	s.Claim("d1", "agent-a", time.Minute)
+	if err := s.Release("d1", "agent-a"); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	// now claimable by another
+	if _, err := s.Claim("d1", "agent-b", time.Minute); err != nil {
+		t.Fatalf("claim after release: %v", err)
+	}
+}
