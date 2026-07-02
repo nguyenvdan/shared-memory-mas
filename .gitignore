@@ -1,0 +1,15 @@
+# Local design notes — keep out of version control
+docs/design/
+
+# Go
+*.test
+*.out
+/bin/
+/dist/
+
+# Profiling artifacts
+*.prof
+*.pprof
+
+# OS
+.DS_Store
