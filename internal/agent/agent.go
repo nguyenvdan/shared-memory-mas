@@ -87,6 +87,12 @@ func RunCoordinated(c *api.Client, docs []model.Doc, agentID string, k int, ttl 
 
 		note := annotate.Annotate(d, k)
 		base := e.Version
+
+		// Heartbeat: extend the lease before doing the write. If we have
+		// already lost the lease (expired), ignore the error and let the write
+		// surface the failure so the doc is left for another agent.
+		_, _ = c.Renew(d.ID, agentID, ttl)
+
 		attempts, werr := retry.Do(p, func() (bool, error) {
 			_, err := c.Write(d.ID, agentID, note, base)
 			if errors.Is(err, api.ErrConflict) {
