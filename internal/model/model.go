@@ -29,3 +29,11 @@ type Finding struct {
 	CommittedVersion int       `json:"committed_version"`
 	Timestamp        time.Time `json:"timestamp"`
 }
+
+// Claim is a lease held by an agent over a document.
+type Claim struct {
+	DocID       string    `json:"doc_id"`
+	AgentID     string    `json:"agent_id"`
+	LeaseExpiry time.Time `json:"lease_expiry"`
+	Version     int       `json:"version"`
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"quorum/internal/model"
 )
@@ -14,13 +15,18 @@ import (
 // ErrConflict is returned by Write when the server responds 409.
 var ErrConflict = errors.New("version conflict")
 
+var (
+	ErrLeaseHeld = errors.New("lease held by another agent")
+	ErrNotHolder = errors.New("caller does not hold the lease")
+)
+
 type Client struct {
 	base string
 	http *http.Client
 }
 
 func NewClient(base string) *Client {
-	return &Client{base: base, http: &http.Client{}}
+	return &Client{base: base, http: &http.Client{Timeout: 5 * time.Second}}
 }
 
 func (c *Client) Read(docID string) (model.Entry, error) {
@@ -74,4 +80,48 @@ func (c *Client) Findings(query string) ([]model.Finding, error) {
 	var out []model.Finding
 	err = json.NewDecoder(resp.Body).Decode(&out)
 	return out, err
+}
+
+func (c *Client) Claim(docID, agentID string, ttl time.Duration) (model.Claim, error) {
+	return c.leaseCall("/claim", docID, agentID, ttl, ErrLeaseHeld)
+}
+
+func (c *Client) Renew(docID, agentID string, ttl time.Duration) (model.Claim, error) {
+	return c.leaseCall("/renew", docID, agentID, ttl, ErrNotHolder)
+}
+
+func (c *Client) leaseCall(path, docID, agentID string, ttl time.Duration, conflictErr error) (model.Claim, error) {
+	var out model.Claim
+	body, _ := json.Marshal(leaseRequest{DocID: docID, AgentID: agentID, TTLMs: int(ttl.Milliseconds())})
+	resp, err := c.http.Post(c.base+path, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		err = json.NewDecoder(resp.Body).Decode(&out)
+		return out, err
+	case http.StatusConflict:
+		return out, conflictErr
+	default:
+		return out, fmt.Errorf("%s: status %d", path, resp.StatusCode)
+	}
+}
+
+func (c *Client) Release(docID, agentID string) error {
+	body, _ := json.Marshal(leaseRequest{DocID: docID, AgentID: agentID})
+	resp, err := c.http.Post(c.base+"/release", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		return nil
+	case http.StatusConflict:
+		return ErrNotHolder
+	default:
+		return fmt.Errorf("release: status %d", resp.StatusCode)
+	}
 }

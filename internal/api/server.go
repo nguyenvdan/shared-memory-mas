@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"quorum/internal/model"
 	"quorum/internal/store"
@@ -19,6 +20,9 @@ func NewServer(s *store.MemStore) *Server {
 	srv.mux.HandleFunc("/read", srv.handleRead)
 	srv.mux.HandleFunc("/write", srv.handleWrite)
 	srv.mux.HandleFunc("/findings", srv.handleFindings)
+	srv.mux.HandleFunc("/claim", srv.handleClaim)
+	srv.mux.HandleFunc("/renew", srv.handleRenew)
+	srv.mux.HandleFunc("/release", srv.handleRelease)
 	return srv
 }
 
@@ -37,6 +41,12 @@ type writeRequest struct {
 	BaseVersion int    `json:"base_version"`
 }
 
+type leaseRequest struct {
+	DocID   string `json:"doc_id"`
+	AgentID string `json:"agent_id"`
+	TTLMs   int    `json:"ttl_ms"`
+}
+
 func (s *Server) handleWrite(w http.ResponseWriter, r *http.Request) {
 	var req writeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -47,6 +57,8 @@ func (s *Server) handleWrite(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, store.ErrVersionConflict):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "version conflict"})
+	case errors.Is(err, store.ErrNoLease):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no lease"})
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
@@ -62,6 +74,57 @@ func (s *Server) handleFindings(w http.ResponseWriter, r *http.Request) {
 		res = s.store.Findings()
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
+	var req leaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	c, err := s.store.Claim(req.DocID, req.AgentID, time.Duration(req.TTLMs)*time.Millisecond)
+	switch {
+	case errors.Is(err, store.ErrLeaseHeld):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "lease held"})
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	default:
+		writeJSON(w, http.StatusOK, c)
+	}
+}
+
+func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
+	var req leaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	c, err := s.store.Renew(req.DocID, req.AgentID, time.Duration(req.TTLMs)*time.Millisecond)
+	switch {
+	case errors.Is(err, store.ErrNotHolder):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "not holder"})
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	default:
+		writeJSON(w, http.StatusOK, c)
+	}
+}
+
+func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {
+	var req leaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	err := s.store.Release(req.DocID, req.AgentID)
+	switch {
+	case errors.Is(err, store.ErrNotHolder):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "not holder"})
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
