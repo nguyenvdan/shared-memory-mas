@@ -86,24 +86,14 @@ func RunCoordinated(c *api.Client, docs []model.Doc, agentID string, k int, ttl 
 		}
 
 		note := annotate.Annotate(d, k)
-		base := e.Version
 
 		// Heartbeat: extend the lease before doing the write. If we have
 		// already lost the lease (expired), ignore the error and let the write
 		// surface the failure so the doc is left for another agent.
 		_, _ = c.Renew(d.ID, agentID, ttl)
 
-		attempts, werr := retry.Do(p, func() (bool, error) {
-			_, err := c.Write(d.ID, agentID, note, base)
-			if errors.Is(err, api.ErrConflict) {
-				if re, rerr := c.Read(d.ID); rerr == nil {
-					base = re.Version
-				}
-				return true, err // retryable
-			}
-			return false, err // success or fatal
-		})
-		st.Conflicts += attempts - 1
+		conflicts, werr := writeWithRetry(c, d.ID, agentID, note, e.Version, p)
+		st.Conflicts += conflicts
 		_ = c.Release(d.ID, agentID)
 		if werr != nil {
 			return st, werr
@@ -111,4 +101,24 @@ func RunCoordinated(c *api.Client, docs []model.Doc, agentID string, k int, ttl 
 		st.Annotated++
 	}
 	return st, nil
+}
+
+// writeWithRetry writes payload for docID under a bounded CAS retry. On a
+// version conflict it re-Reads to refresh the base version and retries. If the
+// re-Read itself fails, it stops and returns that error (rather than retrying
+// with a stale base). Returns the number of conflicts observed (retries).
+func writeWithRetry(c *api.Client, docID, agentID, payload string, base int, p retry.Policy) (int, error) {
+	attempts, err := retry.Do(p, func() (bool, error) {
+		_, werr := c.Write(docID, agentID, payload, base)
+		if errors.Is(werr, api.ErrConflict) {
+			re, rerr := c.Read(docID)
+			if rerr != nil {
+				return false, rerr // cannot refresh base; fail this doc
+			}
+			base = re.Version
+			return true, werr // retryable
+		}
+		return false, werr // success or fatal
+	})
+	return attempts - 1, err
 }
