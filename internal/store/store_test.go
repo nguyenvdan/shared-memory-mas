@@ -293,3 +293,57 @@ func TestCoordinatedStoreStillRequiresLease(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNoLease (default store is coordinated)", err)
 	}
 }
+
+func TestLeaseEventsAreLogged(t *testing.T) {
+	clk := clock.NewMock(time.Unix(1_700_000_000, 0))
+	s := NewMemStore(clk)
+
+	if _, err := s.Claim("d1", "agent-a", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	clk.Advance(10 * time.Second)
+	if _, err := s.Renew("d1", "agent-a", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Release("d1", "agent-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	ev := s.LeaseEvents()
+	if len(ev) != 3 {
+		t.Fatalf("got %d lease events, want 3", len(ev))
+	}
+	if ev[0].Kind != "claim" || ev[1].Kind != "renew" || ev[2].Kind != "release" {
+		t.Fatalf("kinds = %s,%s,%s", ev[0].Kind, ev[1].Kind, ev[2].Kind)
+	}
+	if ev[0].Seq != 1 || ev[1].Seq != 2 || ev[2].Seq != 3 {
+		t.Fatalf("seqs = %d,%d,%d", ev[0].Seq, ev[1].Seq, ev[2].Seq)
+	}
+	if !ev[0].LeaseExpiry.Equal(time.Unix(1_700_000_000, 0).Add(time.Minute)) {
+		t.Fatalf("claim expiry = %v", ev[0].LeaseExpiry)
+	}
+	if ev[0].AgentID != "agent-a" || ev[0].DocID != "d1" {
+		t.Fatalf("claim event = %+v", ev[0])
+	}
+}
+
+func TestLeaseEventsSnapshotIsDefensiveCopy(t *testing.T) {
+	s := NewMemStore(clock.NewMock(time.Unix(1_700_000_000, 0)))
+	s.Claim("d1", "a", time.Minute)
+	snap := s.LeaseEvents()
+	snap[0].AgentID = "mutated"
+	if s.LeaseEvents()[0].AgentID != "a" {
+		t.Fatal("LeaseEvents must return a defensive copy")
+	}
+}
+
+// A refused claim (live lease held by another) must NOT log an event.
+func TestRefusedClaimLogsNoEvent(t *testing.T) {
+	s := NewMemStore(clock.NewMock(time.Unix(1_700_000_000, 0)))
+	s.Claim("d1", "agent-a", time.Minute)
+	_, _ = s.Claim("d1", "agent-b", time.Minute) // refused
+	ev := s.LeaseEvents()
+	if len(ev) != 1 {
+		t.Fatalf("got %d events, want 1 (refused claim must not log)", len(ev))
+	}
+}
