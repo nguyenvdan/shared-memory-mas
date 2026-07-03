@@ -45,3 +45,13 @@ consistent (no lost updates — verified by log replay in the test suite).
 not exact).
 
 Design and benchmark numbers land in later phases. In-memory only; single node.
+
+## Consistency: checker-verified, not asserted
+
+    go run ./cmd/quorum-check -corpus corpus/arxiv.jsonl -agents 16
+
+Replays the append-only findings + lease-event logs and verifies I1–I5 (no
+duplicate committed annotations, no lost updates, lease mutual exclusion,
+expiry recovery, log integrity). Failure-injection tests kill an agent
+mid-claim and force write conflicts, then run the same checker — the injected
+condition is asserted to actually occur before the invariants are checked.
