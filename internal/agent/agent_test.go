@@ -107,3 +107,29 @@ func TestCoordinatedRenewsBeforeWrite(t *testing.T) {
 		t.Fatalf("annotated = %d, want 1", st.Annotated)
 	}
 }
+
+func TestWriteWithRetryRefreshesBaseOnConflict(t *testing.T) {
+	s := store.NewMemStore(clock.NewMock(time.Unix(1_700_000_000, 0)))
+	ts := httptest.NewServer(api.NewServer(s))
+	defer ts.Close()
+	c := api.NewClient(ts.URL)
+
+	if _, err := c.Claim("d1", "a", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Write("d1", "a", "v1", 0); err != nil { // doc now at version 1
+		t.Fatal(err)
+	}
+	// Call the helper with a STALE base (0): first attempt conflicts, the helper
+	// re-Reads (version 1), retries, and commits version 2. One conflict observed.
+	conflicts, err := writeWithRetry(c, "d1", "a", "v2", 0, retry.Default())
+	if err != nil {
+		t.Fatalf("writeWithRetry: %v", err)
+	}
+	if conflicts != 1 {
+		t.Fatalf("conflicts = %d, want 1", conflicts)
+	}
+	if e, _ := c.Read("d1"); e.Version != 2 {
+		t.Fatalf("version = %d, want 2", e.Version)
+	}
+}
