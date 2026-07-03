@@ -17,4 +17,7 @@ findings log (plus, from Phase 2, the lease event log).
 - **I5 — Log integrity:** sequence numbers are strictly monotonic starting at 1
   with no gaps; the log is replayable to reconstruct entry state.
 
-Phase 1 exercises I2 and I5 (single-agent). I1, I3, I4 come online in Phase 2.
+All five invariants are now verified by an automated checker (`internal/checker`)
+that replays the findings and lease-event logs — including under injected
+failures (dead-agent recovery, forced write conflicts). I1 and I3 apply in
+coordinated mode; I2 and I5 apply always.

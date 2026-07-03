@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"quorum/internal/api"
+	"quorum/internal/checker"
 	"quorum/internal/clock"
 	"quorum/internal/corpus"
 	"quorum/internal/replay"
@@ -51,6 +52,12 @@ func TestRunConcurrentNoDuplicateAnnotations(t *testing.T) {
 			// Log replays with no gaps.
 			if _, err := replay.Replay(all); err != nil {
 				t.Fatalf("replay: %v", err)
+			}
+
+			// The invariant checker must independently confirm the run is clean.
+			rep := checker.Check(s.Findings(), s.LeaseEvents(), true)
+			if !rep.OK() {
+				t.Fatalf("checker flagged violations: %+v", rep.Violations)
 			}
 		})
 	}

@@ -30,3 +30,13 @@ func TestReplayDetectsGap(t *testing.T) {
 		t.Fatal("expected a gap/lost-update error")
 	}
 }
+
+func TestReplayRejectsOutOfOrderSeq(t *testing.T) {
+	fs := []model.Finding{
+		{Seq: 2, DocID: "d1", BaseVersion: 0, CommittedVersion: 1},
+		{Seq: 1, DocID: "d2", BaseVersion: 0, CommittedVersion: 1},
+	}
+	if _, err := Replay(fs); err == nil {
+		t.Fatal("expected an out-of-order Seq error")
+	}
+}

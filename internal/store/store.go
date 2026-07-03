@@ -35,6 +35,8 @@ type MemStore struct {
 	log         *Log
 	clk         clock.Clock
 	coordinated bool
+	leaseSeq    int64
+	leaseEvents []model.LeaseEvent
 }
 
 func NewMemStore(clk clock.Clock, opts ...Option) *MemStore {
@@ -90,6 +92,19 @@ func (s *MemStore) Write(docID, agentID, payload string, baseVersion int) (model
 
 func (s *MemStore) Findings() []model.Finding { return s.log.Snapshot() }
 
+// appendLeaseEvent records a lease-log event. Caller must hold s.mu.
+func (s *MemStore) appendLeaseEvent(kind, docID, agentID string, expiry, now time.Time) {
+	s.leaseSeq++
+	s.leaseEvents = append(s.leaseEvents, model.LeaseEvent{
+		Seq:         s.leaseSeq,
+		Kind:        kind,
+		DocID:       docID,
+		AgentID:     agentID,
+		LeaseExpiry: expiry,
+		Timestamp:   now,
+	})
+}
+
 func (s *MemStore) Lookup(keyword string) []model.Finding {
 	kw := strings.ToLower(keyword)
 	var out []model.Finding
@@ -119,6 +134,7 @@ func (s *MemStore) Claim(docID, agentID string, ttl time.Duration) (model.Claim,
 		Version:     cur.Version + 1,
 	}
 	s.claims[docID] = c
+	s.appendLeaseEvent("claim", docID, agentID, c.LeaseExpiry, now)
 	return c, nil
 }
 
@@ -133,6 +149,7 @@ func (s *MemStore) Renew(docID, agentID string, ttl time.Duration) (model.Claim,
 	}
 	cur.LeaseExpiry = now.Add(ttl)
 	s.claims[docID] = cur
+	s.appendLeaseEvent("renew", docID, agentID, cur.LeaseExpiry, now)
 	return cur, nil
 }
 
@@ -147,5 +164,15 @@ func (s *MemStore) Release(docID, agentID string) error {
 		return ErrNotHolder
 	}
 	s.claims[docID] = model.Claim{DocID: docID, Version: cur.Version} // cleared holder
+	s.appendLeaseEvent("release", docID, agentID, time.Time{}, now)
 	return nil
+}
+
+// LeaseEvents returns a defensive copy of the append-only lease-event log.
+func (s *MemStore) LeaseEvents() []model.LeaseEvent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.LeaseEvent, len(s.leaseEvents))
+	copy(out, s.leaseEvents)
+	return out
 }

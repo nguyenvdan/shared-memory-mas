@@ -11,7 +11,12 @@ import (
 // I5: no gaps). Findings must be supplied in append (Seq) order.
 func Replay(findings []model.Finding) (map[string]int, error) {
 	versions := map[string]int{}
+	var prevSeq int64
 	for _, f := range findings {
+		if f.Seq <= prevSeq {
+			return nil, fmt.Errorf("out-of-order or duplicate seq %d (previous %d)", f.Seq, prevSeq)
+		}
+		prevSeq = f.Seq
 		if f.BaseVersion != versions[f.DocID] {
 			return nil, fmt.Errorf("doc %s seq %d: base_version %d != running %d",
 				f.DocID, f.Seq, f.BaseVersion, versions[f.DocID])

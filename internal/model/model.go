@@ -37,3 +37,13 @@ type Claim struct {
 	LeaseExpiry time.Time `json:"lease_expiry"`
 	Version     int       `json:"version"`
 }
+
+// LeaseEvent is one append-only lease-log record: a claim, renew, or release.
+type LeaseEvent struct {
+	Seq         int64     `json:"seq"`
+	Kind        string    `json:"kind"` // "claim" | "renew" | "release"
+	DocID       string    `json:"doc_id"`
+	AgentID     string    `json:"agent_id"`
+	LeaseExpiry time.Time `json:"lease_expiry"`
+	Timestamp   time.Time `json:"timestamp"`
+}
