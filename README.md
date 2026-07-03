@@ -58,17 +58,23 @@ condition is asserted to actually occur before the invariants are checked.
 
 ## Latency & throughput
 
-    go run ./cmd/quorum-perf -agents 2,4,8,16
+    go run ./cmd/quorum-perf -agents 2,4,8,16 -runs 5
 
 Per-operation latency and aggregate throughput across N agents (race off,
-keep-alives on, docs/agent=200, 3 passes):
+keep-alives on, docs/agent=200, 3 passes), **mean over 5 runs**. Ops/sec is
+reported as mean±stddev across those runs — a single run swings ~30%
+run-to-run, so a lone figure overstates reproducibility. Percentiles
+aggregate docs/agent×passes×agents samples per run and are stable, so
+they're shown as the mean across runs. The workload uses per-agent private
+doc keys (no cross-agent contention), so this measures substrate op cost,
+not contention behavior:
 
-   N       ops    ops/sec | claim p50/p95/p99      | write p50/p95/p99      | release p50/p95/p99
-----------------------------------------------------------------------------------------------------
-   2      3600      32455 | 38µs/95µs/148µs        | 40µs/98µs/143µs        | 35µs/86µs/122µs
-   4      7200      48216 | 54µs/137µs/237µs       | 55µs/132µs/216µs       | 48µs/125µs/207µs
-   8     14400      64294 | 77µs/248µs/430µs       | 79µs/251µs/446µs       | 70µs/209µs/394µs
-  16     28800      79937 | 115µs/431µs/747µs      | 117µs/421µs/771µs      | 109µs/386µs/725µs
+   N       ops          ops/sec | claim p50/p95/p99      | write p50/p95/p99      | release p50/p95/p99
+----------------------------------------------------------------------------------------------------------
+   2      3600    39764±2903   | 35µs/65µs/118µs        | 36µs/67µs/122µs        | 31µs/58µs/107µs
+   4      7200    52306±2147   | 49µs/126µs/194µs       | 49µs/130µs/201µs       | 44µs/118µs/185µs
+   8     14400    70763±1830   | 70µs/219µs/391µs       | 72µs/216µs/387µs       | 64µs/192µs/348µs
+  16     28800    83144±2815   | 111µs/414µs/727µs      | 112µs/416µs/736µs      | 104µs/369µs/680µs
 
 **One optimization:** `api.NewClient` used to build its `*http.Client` with a
 nil `Transport`, so every agent fell back to Go's shared
