@@ -80,6 +80,15 @@ covered by a live lease held by its author — reconstructed from a per-document
 lease-interval timeline), I4 (a reclaim after expiry is legal), and I5 (log
 integrity: monotonic sequence, no gaps).
 
+I4 is worth a precise word: it is not a standalone predicate with its own
+violation code path. It is enforced *within* the I3 timeline — a reclaim whose
+timestamp is at or after the prior lease's expiry is admitted as legal, while a
+claim by a different agent *before* that expiry is flagged as a mutual-exclusion
+violation. Recovery correctness is then exercised end-to-end by the dead-agent
+injection test (below), which drives an actual expire-and-reclaim and runs the
+checker over the result. So "I1–I5 hold" means I4's recovery path was taken and
+produced a history the checker accepts — not that a dedicated I4 assertion fired.
+
 **Failure injection, with the condition asserted.** A checker that only ever sees
 clean runs proves little. Two injection tests feed it adversarial histories:
 one kills an agent mid-claim (the mock clock advances past the TTL; a second
