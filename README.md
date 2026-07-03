@@ -1,4 +1,4 @@
-# Quorum
+
 
 A concurrent shared-memory coordination substrate for multi-agent systems (Go).
 Lease-based claiming + CAS-versioned writes over a shared in-memory store.
