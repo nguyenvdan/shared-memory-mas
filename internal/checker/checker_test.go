@@ -168,3 +168,20 @@ func TestCheckLeaseI5FlagsSeqGap(t *testing.T) {
 		t.Fatalf("expected lease I5 violation, got %+v", r.Violations)
 	}
 }
+
+func TestCheckI3FlagsRenewAfterExpiry(t *testing.T) {
+	// agent-a claims d1 (expiry 160), then "renews" at ts=200 (AFTER expiry).
+	// The store never emits this, but the checker must not resurrect the dead
+	// lease and false-cover the write at ts=210 -> must flag I3.
+	lease := []model.LeaseEvent{
+		{Seq: 1, Kind: "claim", DocID: "d1", AgentID: "a", LeaseExpiry: time.Unix(160, 0), Timestamp: time.Unix(100, 0)},
+		{Seq: 2, Kind: "renew", DocID: "d1", AgentID: "a", LeaseExpiry: time.Unix(260, 0), Timestamp: time.Unix(200, 0)},
+	}
+	findings := []model.Finding{
+		{Seq: 1, DocID: "d1", AgentID: "a", BaseVersion: 0, CommittedVersion: 1, Timestamp: time.Unix(210, 0)},
+	}
+	r := Check(findings, lease, true)
+	if r.OK() || !hasInvariant(r, "I3") {
+		t.Fatalf("expected I3 (renew-after-expiry), got %+v", r.Violations)
+	}
+}

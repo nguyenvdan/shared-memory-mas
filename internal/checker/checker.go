@@ -139,6 +139,15 @@ func checkLeaseInvariants(r *Report, findings []model.Finding, lease []model.Lea
 				r.flag("I3", "doc %s: renew by %s who does not hold the lease", e.DocID, e.AgentID)
 				continue
 			}
+			if !e.Timestamp.Before(cur.End) {
+				// Renew after the lease already expired: the store never emits
+				// this (Renew requires a live lease). Do not resurrect the dead
+				// interval — flag it, leaving End unchanged so a later write in
+				// the gap is correctly reported as uncovered.
+				r.flag("I3", "doc %s: renew by %s at %v after lease expired at %v",
+					e.DocID, e.AgentID, e.Timestamp, cur.End)
+				continue
+			}
 			cur.End = e.LeaseExpiry // extend
 		case "release":
 			closeCurrent(e.DocID, e.Timestamp)
