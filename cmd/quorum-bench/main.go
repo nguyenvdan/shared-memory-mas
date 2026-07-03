@@ -4,8 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -38,29 +36,12 @@ func main() {
 	fmt.Println(strings.Repeat("-", 60))
 
 	for _, n := range counts {
-		// baseline: retry cap generous enough that every duplicate commits.
 		baseP := retry.Policy{MaxAttempts: 4*n + 32, BaseDelay: 0}
 		printRow(runCell(false, n, docs, *k, *ttl, baseP, *runs))
-		runtime.GC()
-		debug.FreeOSMemory()
-		cleanupTime := 3 * time.Second
-		if n >= 8 {
-			cleanupTime = 10 * time.Second // heavy contention at N>=8
-		}
-		time.Sleep(cleanupTime) // allow cleanup between baseline and coordinated
-		runtime.GC()
-		debug.FreeOSMemory()
-		time.Sleep(1 * time.Second)
 		printRow(runCell(true, n, docs, *k, *ttl, retry.Default(), *runs))
-		runtime.GC()
-		debug.FreeOSMemory()
-		time.Sleep(cleanupTime) // allow cleanup between agent counts
 	}
 }
 
-// runCell runs one (mode, N) cell `runs` times and returns the last run's raw
-// counts with the duplication rate averaged across runs (counts are
-// deterministic by construction; averaging guards against any surprise).
 func runCell(coordinated bool, n int, docs []model.Doc, k int, ttl time.Duration, p retry.Policy, runs int) bench.Result {
 	var agg bench.Result
 	var rateSum float64
@@ -71,9 +52,6 @@ func runCell(coordinated bool, n int, docs []model.Doc, k int, ttl time.Duration
 		}
 		agg = res
 		rateSum += res.DuplicationRate
-		if i < runs-1 { // no sleep after last run in cell
-			time.Sleep(3 * time.Second) // allow port cleanup between runs
-		}
 	}
 	agg.DuplicationRate = rateSum / float64(runs)
 	return agg

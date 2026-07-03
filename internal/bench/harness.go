@@ -23,7 +23,9 @@ func RunScenario(coordinated bool, agents int, docs []model.Doc, k int, ttl time
 	} else {
 		s = store.NewMemStore(clock.Real{}, store.Uncoordinated())
 	}
-	ts := httptest.NewServer(api.NewServer(s))
+	ts := httptest.NewUnstartedServer(api.NewServer(s))
+	ts.Config.SetKeepAlivesEnabled(false)
+	ts.Start()
 	defer ts.Close()
 
 	ids := make([]string, agents)

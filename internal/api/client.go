@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -35,7 +36,7 @@ func (c *Client) Read(docID string) (model.Entry, error) {
 	if err != nil {
 		return e, err
 	}
-	defer resp.Body.Close()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return e, fmt.Errorf("read: status %d", resp.StatusCode)
 	}
@@ -52,7 +53,7 @@ func (c *Client) Write(docID, agentID, payload string, baseVersion int) (model.F
 	if err != nil {
 		return f, err
 	}
-	defer resp.Body.Close()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
 	switch resp.StatusCode {
 	case http.StatusOK:
 		err = json.NewDecoder(resp.Body).Decode(&f)
@@ -73,7 +74,7 @@ func (c *Client) Findings(query string) ([]model.Finding, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("findings: status %d", resp.StatusCode)
 	}
@@ -97,7 +98,7 @@ func (c *Client) leaseCall(path, docID, agentID string, ttl time.Duration, confl
 	if err != nil {
 		return out, err
 	}
-	defer resp.Body.Close()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
 	switch resp.StatusCode {
 	case http.StatusOK:
 		err = json.NewDecoder(resp.Body).Decode(&out)
@@ -115,7 +116,7 @@ func (c *Client) Release(docID, agentID string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); resp.Body.Close() }()
 	switch resp.StatusCode {
 	case http.StatusNoContent:
 		return nil
