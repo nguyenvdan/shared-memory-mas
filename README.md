@@ -55,3 +55,35 @@ duplicate committed annotations, no lost updates, lease mutual exclusion,
 expiry recovery, log integrity). Failure-injection tests kill an agent
 mid-claim and force write conflicts, then run the same checker — the injected
 condition is asserted to actually occur before the invariants are checked.
+
+## Latency & throughput
+
+    go run ./cmd/quorum-perf -agents 2,4,8,16 -runs 5
+
+Per-operation latency and aggregate throughput across N agents (race off,
+keep-alives on, docs/agent=200, 3 passes), **mean over 5 runs**. Ops/sec is
+reported as mean±stddev across those runs — a single run swings ~30%
+run-to-run, so a lone figure overstates reproducibility. Percentiles
+aggregate docs/agent×passes×agents samples per run and are stable, so
+they're shown as the mean across runs. The workload uses per-agent private
+doc keys (no cross-agent contention), so this measures substrate op cost,
+not contention behavior:
+
+   N       ops          ops/sec | claim p50/p95/p99      | write p50/p95/p99      | release p50/p95/p99
+----------------------------------------------------------------------------------------------------------
+   2      3600    39764±2903   | 35µs/65µs/118µs        | 36µs/67µs/122µs        | 31µs/58µs/107µs
+   4      7200    52306±2147   | 49µs/126µs/194µs       | 49µs/130µs/201µs       | 44µs/118µs/185µs
+   8     14400    70763±1830   | 70µs/219µs/391µs       | 72µs/216µs/387µs       | 64µs/192µs/348µs
+  16     28800    83144±2815   | 111µs/414µs/727µs      | 112µs/416µs/736µs      | 104µs/369µs/680µs
+
+**One optimization:** `api.NewClient` used to build its `*http.Client` with a
+nil `Transport`, so every agent fell back to Go's shared
+`http.DefaultTransport`, whose `MaxIdleConnsPerHost` is 2. With N agents
+hammering one host, only 2 connections pooled per client and the rest churned
+(open+close per request). At N=16 this exhausted ephemeral ports and the run
+failed outright; throughput below that was also non-monotonic (N=4 was slower
+than both N=2 and N=8). The fix gives each client its own transport (cloned
+from the default) with `MaxIdleConnsPerHost` raised to 256, so each agent
+reuses its own pooled connections instead of contending over a global
+2-connection pool. After the fix, N=16 completes cleanly and throughput scales
+monotonically with N (32455 → 48216 → 64294 → 79937 ops/sec).

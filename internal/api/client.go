@@ -27,7 +27,10 @@ type Client struct {
 }
 
 func NewClient(base string) *Client {
-	return &Client{base: base, http: &http.Client{Timeout: 5 * time.Second}}
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConns = 256
+	t.MaxIdleConnsPerHost = 256
+	return &Client{base: base, http: &http.Client{Timeout: 5 * time.Second, Transport: t}}
 }
 
 func (c *Client) Read(docID string) (model.Entry, error) {
