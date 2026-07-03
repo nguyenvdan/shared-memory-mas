@@ -124,6 +124,13 @@ func checkLeaseInvariants(r *Report, findings []model.Finding, lease []model.Lea
 			// Close any prior interval (legal reclaim after expiry, or a
 			// same-agent re-claim) and open a new one.
 			if cur != nil {
+				// The new claim supersedes the prior lease: cap the prior
+				// interval's End at this claim's timestamp so it never retains a
+				// stale future End that would falsely "cover" a later write.
+				if e.Timestamp.Before(cur.End) {
+					cur.End = e.Timestamp
+				}
+				cur.Ended = true
 				intervals[e.DocID] = append(intervals[e.DocID], *cur)
 			}
 			current[e.DocID] = &leaseInterval{Agent: e.AgentID, Start: e.Timestamp, End: e.LeaseExpiry}

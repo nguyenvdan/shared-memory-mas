@@ -140,6 +140,24 @@ func TestCheckI3FlagsWriteWithoutLease(t *testing.T) {
 	}
 }
 
+func TestCheckI3FlagsWriteInPhantomWindowAfterShorterReclaim(t *testing.T) {
+	// agent-a claims d1 with expiry 200, then RE-CLAIMS at ts=150 with a SHORTER
+	// expiry (160). A write at ts=180 falls in the phantom window [160,200) of the
+	// superseded first lease, but a's actual lease expired at 160 -> the checker
+	// must flag I3 (write not covered by a live lease), not falsely pass it.
+	lease := []model.LeaseEvent{
+		{Seq: 1, Kind: "claim", DocID: "d1", AgentID: "a", LeaseExpiry: time.Unix(200, 0), Timestamp: time.Unix(100, 0)},
+		{Seq: 2, Kind: "claim", DocID: "d1", AgentID: "a", LeaseExpiry: time.Unix(160, 0), Timestamp: time.Unix(150, 0)},
+	}
+	findings := []model.Finding{
+		{Seq: 1, DocID: "d1", AgentID: "a", BaseVersion: 0, CommittedVersion: 1, Timestamp: time.Unix(180, 0)},
+	}
+	r := Check(findings, lease, true)
+	if r.OK() || !hasInvariant(r, "I3") {
+		t.Fatalf("expected I3 (phantom-window write after shorter reclaim), got %+v", r.Violations)
+	}
+}
+
 func TestCheckLeaseI5FlagsSeqGap(t *testing.T) {
 	lease := []model.LeaseEvent{
 		{Seq: 1, Kind: "claim", DocID: "d1", AgentID: "a", LeaseExpiry: time.Unix(160, 0), Timestamp: time.Unix(100, 0)},
