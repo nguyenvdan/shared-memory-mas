@@ -265,3 +265,31 @@ func TestRenewalSurvivesLongWork(t *testing.T) {
 		t.Fatalf("lease should still be held: %v", err)
 	}
 }
+
+func TestUncoordinatedWriteNeedsNoLeaseButKeepsCAS(t *testing.T) {
+	s := NewMemStore(clock.NewMock(time.Unix(1_700_000_000, 0)), Uncoordinated())
+
+	// No claim taken, yet the write commits (lease guard bypassed).
+	f, err := s.Write("d1", "agent-a", "note", 0)
+	if err != nil {
+		t.Fatalf("uncoordinated write: %v", err)
+	}
+	if f.CommittedVersion != 1 {
+		t.Fatalf("version = %d, want 1", f.CommittedVersion)
+	}
+	// CAS is still enforced: a stale base still conflicts.
+	if _, err := s.Write("d1", "agent-b", "note2", 0); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("err = %v, want ErrVersionConflict (CAS still on)", err)
+	}
+	// A correct base commits a second annotation for the same doc.
+	if _, err := s.Write("d1", "agent-b", "note2", 1); err != nil {
+		t.Fatalf("second annotation: %v", err)
+	}
+}
+
+func TestCoordinatedStoreStillRequiresLease(t *testing.T) {
+	s := NewMemStore(clock.NewMock(time.Unix(1_700_000_000, 0))) // default: coordinated
+	if _, err := s.Write("d1", "agent-a", "note", 0); !errors.Is(err, ErrNoLease) {
+		t.Fatalf("err = %v, want ErrNoLease (default store is coordinated)", err)
+	}
+}

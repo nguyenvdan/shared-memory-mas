@@ -17,23 +17,38 @@ var (
 	ErrNoLease         = errors.New("writer holds no live lease on the doc")
 )
 
+// Option configures a MemStore at construction.
+type Option func(*MemStore)
+
+// Uncoordinated disables the lease guard on Write (version CAS stays on). Used
+// for the no-coordination baseline benchmark.
+func Uncoordinated() Option {
+	return func(s *MemStore) { s.coordinated = false }
+}
+
 // MemStore is the in-memory store: a derived version map plus the append-only
 // log that is the source of truth. Single mutex now; leases arrive in Phase 2.
 type MemStore struct {
-	mu      sync.RWMutex
-	entries map[string]model.Entry
-	claims  map[string]model.Claim
-	log     *Log
-	clk     clock.Clock
+	mu          sync.RWMutex
+	entries     map[string]model.Entry
+	claims      map[string]model.Claim
+	log         *Log
+	clk         clock.Clock
+	coordinated bool
 }
 
-func NewMemStore(clk clock.Clock) *MemStore {
-	return &MemStore{
-		entries: make(map[string]model.Entry),
-		claims:  make(map[string]model.Claim),
-		log:     NewLog(),
-		clk:     clk,
+func NewMemStore(clk clock.Clock, opts ...Option) *MemStore {
+	s := &MemStore{
+		entries:     make(map[string]model.Entry),
+		claims:      make(map[string]model.Claim),
+		log:         NewLog(),
+		clk:         clk,
+		coordinated: true,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func (s *MemStore) Read(docID string) model.Entry {
@@ -50,10 +65,12 @@ func (s *MemStore) Write(docID, agentID, payload string, baseVersion int) (model
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if lc := s.claims[docID]; !leaseLive(lc, s.clk.Now()) || lc.AgentID != agentID {
-		return model.Finding{}, ErrNoLease
+	if s.coordinated {
+		if lc := s.claims[docID]; !leaseLive(lc, s.clk.Now()) || lc.AgentID != agentID {
+			return model.Finding{}, ErrNoLease
+		}
 	}
-
+	// version CAS runs in BOTH modes:
 	cur := s.entries[docID] // zero Entry => Version 0 when absent
 	if cur.Version != baseVersion {
 		return model.Finding{}, ErrVersionConflict
