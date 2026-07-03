@@ -45,15 +45,22 @@ func main() {
 func runCell(coordinated bool, n int, docs []model.Doc, k int, ttl time.Duration, p retry.Policy, runs int) bench.Result {
 	var agg bench.Result
 	var rateSum float64
+	var conflictsSum, claimsLostSum int
 	for i := 0; i < runs; i++ {
 		res, err := bench.RunScenario(coordinated, n, docs, k, ttl, p)
 		if err != nil {
 			log.Fatalf("scenario (coord=%v n=%d): %v", coordinated, n, err)
 		}
-		agg = res
+		agg = res // deterministic counts (findings/unique) are identical each run
 		rateSum += res.DuplicationRate
+		conflictsSum += res.Conflicts
+		claimsLostSum += res.ClaimsLost
 	}
+	// dup rate is deterministic; conflicts/claims-lost vary with scheduling, so
+	// report their mean across runs rather than a single sample.
 	agg.DuplicationRate = rateSum / float64(runs)
+	agg.Conflicts = conflictsSum / runs
+	agg.ClaimsLost = claimsLostSum / runs
 	return agg
 }
 

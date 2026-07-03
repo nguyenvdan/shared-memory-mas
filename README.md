@@ -38,6 +38,10 @@ the arXiv corpus:
 
 Baseline agents redundantly re-annotate every document; lease-based claiming
 reduces duplicated annotation work to zero while the version CAS keeps the log
-consistent (no lost updates — verified by log replay).
+consistent (no lost updates — verified by log replay in the test suite).
+
+`findings`, `unique`, and `dup%` are deterministic by construction; the
+`conflicts` column is a scheduling-dependent mean across runs (representative,
+not exact).
 
 Design and benchmark numbers land in later phases. In-memory only; single node.
