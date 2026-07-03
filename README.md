@@ -19,7 +19,7 @@ Phase 2 adds lease-based claiming + CAS-retry and a concurrent swarm:
 
 Run the duplication benchmark across the arXiv corpus:
 
-    go run ./cmd/quorum-bench -corpus corpus/arxiv.jsonl -runs 1 -agents 2,4,8,16
+    go run ./cmd/quorum-bench -corpus corpus/arxiv.jsonl -runs 5 -agents 2,4,8,16
 
 Doc-level duplication rate (fraction of committed annotations that are redundant),
 coordinated (lease-based claiming) vs baseline (no coordination), N agents over

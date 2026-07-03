@@ -24,6 +24,10 @@ func RunScenario(coordinated bool, agents int, docs []model.Doc, k int, ttl time
 		s = store.NewMemStore(clock.Real{}, store.Uncoordinated())
 	}
 	ts := httptest.NewUnstartedServer(api.NewServer(s))
+	// Keep-alives are disabled so loopback ephemeral ports recycle immediately
+	// under the extreme request volume at high N (this is a duplication-count
+	// benchmark, not a latency one). A Phase-5 latency/throughput benchmark must
+	// re-enable keep-alives, or per-op cost is inflated by a handshake per call.
 	ts.Config.SetKeepAlivesEnabled(false)
 	ts.Start()
 	defer ts.Close()
